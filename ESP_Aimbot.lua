@@ -1,107 +1,114 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
 
--- Variables de configuración
-local ESPEnabled = false
-local AimbotEnabled = false
+-- Table to store ESP objects
 local ESPObjects = {}
 
--- Crear el panel con Drawing API
-local GUI = {}
-GUI.Frame = Drawing.new("Square")
-GUI.Frame.Size = Vector2.new(200, 150)
-GUI.Frame.Position = Vector2.new(50, 50)
-GUI.Frame.Color = Color3.fromRGB(30, 30, 30)
-GUI.Frame.Thickness = 2
-GUI.Frame.Filled = true
-GUI.Frame.Visible = true
+-- Aimbot toggle
+local aimbotEnabled = false
+local recoilEnabled = true
 
-GUI.Title = Drawing.new("Text")
-GUI.Title.Text = "ESP & Aimbot"
-GUI.Title.Size = 20
-GUI.Title.Position = Vector2.new(80, 60)
-GUI.Title.Color = Color3.fromRGB(255, 255, 255)
-GUI.Title.Outline = true
-GUI.Title.Visible = true
-
-GUI.ESPButton = Drawing.new("Square")
-GUI.ESPButton.Size = Vector2.new(180, 30)
-GUI.ESPButton.Position = Vector2.new(60, 90)
-GUI.ESPButton.Color = Color3.fromRGB(50, 150, 250)
-GUI.ESPButton.Filled = true
-GUI.ESPButton.Visible = true
-
-GUI.ESPText = Drawing.new("Text")
-GUI.ESPText.Text = "Activar ESP"
-GUI.ESPText.Size = 18
-GUI.ESPText.Position = Vector2.new(90, 95)
-GUI.ESPText.Color = Color3.fromRGB(255, 255, 255)
-GUI.ESPText.Visible = true
-
-GUI.AimbotButton = Drawing.new("Square")
-GUI.AimbotButton.Size = Vector2.new(180, 30)
-GUI.AimbotButton.Position = Vector2.new(60, 130)
-GUI.AimbotButton.Color = Color3.fromRGB(250, 50, 50)
-GUI.AimbotButton.Filled = true
-GUI.AimbotButton.Visible = true
-
-GUI.AimbotText = Drawing.new("Text")
-GUI.AimbotText.Text = "Activar Aimbot"
-GUI.AimbotText.Size = 18
-GUI.AimbotText.Position = Vector2.new(90, 135)
-GUI.AimbotText.Color = Color3.fromRGB(255, 255, 255)
-GUI.AimbotText.Visible = true
-
--- Función para crear ESP
+-- Create ESP for a player
 local function createESP(player)
-    if player == LocalPlayer or not ESPEnabled then return end
+    if player == LocalPlayer then return end
 
     local function onCharacterAdded(character)
-        local rootPart = character:WaitForChild("HumanoidRootPart", 5)
-        local humanoid = character:WaitForChild("Humanoid", 5)
-        if not rootPart or not humanoid then return end
+        if not character:FindFirstChild("HumanoidRootPart") or not character:FindFirstChild("Humanoid") then return end
 
-        -- Crear Nametag y Tracer
+        local humanoid = character:WaitForChild("Humanoid")
+
+        -- BillboardGui for Nametag and Health Bar
+        local billboard = Instance.new("BillboardGui")
+        billboard.Adornee = character:WaitForChild("HumanoidRootPart")
+        billboard.Size = UDim2.new(5, 0, 1, 0)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+
+        -- Nametag
+        local nametag = Instance.new("TextLabel", billboard)
+        nametag.Size = UDim2.new(1, 0, 0.5, 0)
+        nametag.BackgroundTransparency = 1
+        nametag.Text = player.Name
+        nametag.TextColor3 = Color3.new(1, 1, 1)
+        nametag.TextScaled = true
+        nametag.Font = Enum.Font.SourceSansBold
+
+        -- Health Bar
+        local healthBarBackground = Instance.new("Frame", billboard)
+        healthBarBackground.Size = UDim2.new(1, 0, 0.2, 0)
+        healthBarBackground.Position = UDim2.new(0, 0, 0.6, 0)
+        healthBarBackground.BackgroundColor3 = Color3.new(0, 0, 0)
+
+        local healthBar = Instance.new("Frame", healthBarBackground)
+        healthBar.Size = UDim2.new(1, 0, 1, 0)
+        healthBar.BackgroundColor3 = Color3.new(0, 1, 0)
+
+        billboard.Parent = character:WaitForChild("HumanoidRootPart")
+
+        -- Tracers
         local tracer = Drawing.new("Line")
-        tracer.Visible = false
+        tracer.Visible = true
         tracer.Thickness = 2
         tracer.Color = Color3.new(1, 1, 1)
 
-        ESPObjects[player] = {Tracer = tracer}
+        -- Store objects
+        ESPObjects[player] = {Billboard = billboard, HealthBar = healthBar, Tracer = tracer}
 
-        -- Actualizar ESP en cada frame
-        RunService.RenderStepped:Connect(function()
-            if ESPObjects[player] and character and rootPart then
-                local screenPos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
-                if onScreen then
-                    tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                    tracer.To = Vector2.new(screenPos.X, screenPos.Y)
-                    tracer.Visible = ESPEnabled
-                else
-                    tracer.Visible = false
+        -- Update health in real-time
+        local function updateHealth()
+            if humanoid.Health > 0 then
+                healthBar.Size = UDim2.new(humanoid.Health / humanoid.MaxHealth, 0, 1, 0)
+                healthBar.BackgroundColor3 = Color3.fromRGB(255 - (humanoid.Health / humanoid.MaxHealth) * 255, (humanoid.Health / humanoid.MaxHealth) * 255, 0)
+            else
+                if ESPObjects[player] then
+                    ESPObjects[player].Billboard:Destroy()
+                    ESPObjects[player].Tracer:Remove()
+                    ESPObjects[player] = nil
                 end
             end
-        end)
+        end
 
-        -- Eliminar ESP cuando muere el jugador
-        humanoid.Died:Connect(function()
-            if ESPObjects[player] then
-                ESPObjects[player].Tracer:Remove()
-                ESPObjects[player] = nil
-            end
-        end)
+        humanoid.HealthChanged:Connect(updateHealth)
+        updateHealth()
     end
 
     if player.Character then
         onCharacterAdded(player.Character)
     end
+
     player.CharacterAdded:Connect(onCharacterAdded)
 end
 
--- Función para encontrar al enemigo más cercano
+-- Update ESP
+local function updateESP()
+    for player, objects in pairs(ESPObjects) do
+        local character = player.Character
+        if character and character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Humanoid") then
+            local rootPart = character.HumanoidRootPart
+
+            -- Update tracer
+            local tracer = objects.Tracer
+            local rootPartPosition, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+            if onScreen and player.Team ~= LocalPlayer.Team then
+                tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                tracer.To = Vector2.new(rootPartPosition.X, rootPartPosition.Y)
+                tracer.Visible = true
+            else
+                tracer.Visible = false
+            end
+        else
+            -- Cleanup if character is not valid
+            objects.Billboard:Destroy()
+            objects.Tracer:Remove()
+            ESPObjects[player] = nil
+        end
+    end
+end
+
+-- Aimbot function
 local function getClosestEnemy()
     local closestPlayer = nil
     local shortestDistance = math.huge
@@ -126,9 +133,9 @@ local function getClosestEnemy()
     return closestPlayer
 end
 
--- Función para manejar el Aimbot
+-- Aimbot update
 local function updateAimbot()
-    if AimbotEnabled then
+    if aimbotEnabled then
         local target = getClosestEnemy()
         if target and target.Character and target.Character:FindFirstChild("Head") then
             local targetPosition = target.Character.Head.Position
@@ -137,47 +144,112 @@ local function updateAimbot()
     end
 end
 
--- Eventos para activar/desactivar Aimbot con clic derecho
+-- No recoil function
+local function noRecoil()
+    local weapon = LocalPlayer.Character:FindFirstChild("Tool")
+    if weapon and weapon:IsA("Tool") then
+        local handle = weapon:FindFirstChild("Handle")
+        if handle then
+            local originalCFrame = handle.CFrame
+            local targetCFrame = originalCFrame
+
+            if recoilEnabled then
+                handle.CFrame = handle.CFrame:Lerp(targetCFrame, 0.1)
+            end
+
+            weapon.Activated:Connect(function()
+                handle.CFrame = originalCFrame
+            end)
+        end
+    end
+end
+
+-- Activación y desactivación del Aimbot con clic derecho
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
+
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        AimbotEnabled = true
+        aimbotEnabled = true
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        AimbotEnabled = false
+        aimbotEnabled = false
     end
 end)
 
--- Evento para alternar ESP
-UserInputService.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        local mousePos = Vector2.new(input.Position.X, input.Position.Y)
-        local espBtnPos = GUI.ESPButton.Position
-        local aimBtnPos = GUI.AimbotButton.Position
-        local btnSize = GUI.ESPButton.Size
+-- Create a simple UI panel
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = game.CoreGui
 
-        if mousePos.X >= espBtnPos.X and mousePos.X <= (espBtnPos.X + btnSize.X) and
-           mousePos.Y >= espBtnPos.Y and mousePos.Y <= (espBtnPos.Y + btnSize.Y) then
-            ESPEnabled = not ESPEnabled
-            GUI.ESPText.Text = ESPEnabled and "Desactivar ESP" or "Activar ESP"
-        end
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 200, 0, 150)
+frame.Position = UDim2.new(0, 10, 0, 10)
+frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+frame.Parent = ScreenGui
 
-        if mousePos.X >= aimBtnPos.X and mousePos.X <= (aimBtnPos.X + btnSize.X) and
-           mousePos.Y >= aimBtnPos.Y and mousePos.Y <= (aimBtnPos.Y + btnSize.Y) then
-            AimbotEnabled = not AimbotEnabled
-            GUI.AimbotText.Text = AimbotEnabled and "Desactivar Aimbot" or "Activar Aimbot"
-        end
+local espButton = Instance.new("TextButton")
+espButton.Size = UDim2.new(0, 180, 0, 30)
+espButton.Position = UDim2.new(0, 10, 0, 10)
+espButton.Text = "Toggle ESP"
+espButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+espButton.Parent = frame
+
+local aimbotButton = Instance.new("TextButton")
+aimbotButton.Size = UDim2.new(0, 180, 0, 30)
+aimbotButton.Position = UDim2.new(0, 10, 0, 50)
+aimbotButton.Text = "Toggle Aimbot"
+aimbotButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+aimbotButton.Parent = frame
+
+local recoilButton = Instance.new("TextButton")
+recoilButton.Size = UDim2.new(0, 180, 0, 30)
+recoilButton.Position = UDim2.new(0, 10, 0, 90)
+recoilButton.Text = "Toggle No Recoil"
+recoilButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+recoilButton.Parent = frame
+
+-- Toggle ESP visibility
+espButton.MouseButton1Click:Connect(function()
+    for _, player in ipairs(Players:GetPlayers()) do
+        createESP(player)
     end
 end)
 
--- Iniciar ESP para los jugadores
-Players.PlayerAdded:Connect(createESP)
+-- Toggle Aimbot
+aimbotButton.MouseButton1Click:Connect(function()
+    aimbotEnabled = not aimbotEnabled
+    aimbotButton.Text = aimbotEnabled and "Aimbot ON" or "Aimbot OFF"
+end)
+
+-- Toggle No Recoil
+recoilButton.MouseButton1Click:Connect(function()
+    recoilEnabled = not recoilEnabled
+    recoilButton.Text = recoilEnabled and "No Recoil ON" or "No Recoil OFF"
+end)
+
+-- Listen for players
+Players.PlayerAdded:Connect(function(player)
+    createESP(player)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if ESPObjects[player] then
+        ESPObjects[player].Billboard:Destroy()
+        ESPObjects[player].Tracer:Remove()
+        ESPObjects[player] = nil
+    end
+end)
+
+-- Initialize ESP for existing players
 for _, player in ipairs(Players:GetPlayers()) do
     createESP(player)
 end
 
--- Actualizar Aimbot en cada frame
-RunService.RenderStepped:Connect(updateAimbot)
+-- Update ESP, Aimbot, and No Recoil every frame
+RunService.RenderStepped:Connect(function()
+    updateESP()
+    updateAimbot()
+    noRecoil()
+end)
